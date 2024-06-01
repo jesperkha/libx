@@ -22,7 +22,7 @@ typedef enum error
     ERR_MEMORY_FREED,              // Marked as freed memory
     ERR_DOUBLE_FREE,               // Memory freed more than once
     ERR_ARENA_RELEASE_AFTER_ALLOC, // Temp arena released after parent alloc
-    ERR_TEMP_ARENA_FREE,           // Tried to free (pointer) a temp arena
+    ERR_TEMP_ARENA_FREE,           // Tried to free a temp arena
 } error;
 
 typedef struct String

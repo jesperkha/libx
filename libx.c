@@ -31,6 +31,7 @@ Arena XArenaNew(int size)
 		.memory = m,
 		.pos = 0,
 		.size = size,
+		.depth = 0,
 	};
 }
 
@@ -58,6 +59,7 @@ Arena XArenaTemp(Arena *parent, int size)
 		.memory = p,
 		.pos = 0,
 		.size = size,
+		.depth = parent->depth + 1,
 	};
 }
 
