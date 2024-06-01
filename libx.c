@@ -1,14 +1,18 @@
 #include "libx.h"
 #include <windows.h>
 #include <stdlib.h>
+#include <string.h>
 
-#define xdefaultAlloc(size) (malloc(size))
-#define xdefaultFree(p) (free(p))
+#define xdefaultAlloc(size) (HeapAlloc(GetProcessHeap(), 0, size))
+#define xdefaultFree(p) (HeapFree(GetProcessHeap(), 0, p))
 
 static char *error_msgs[] = {
-	[NO_ERROR] = "No error",
+	[ERR_NO_ERROR] = "No error",
 	[ERR_FILE_READ] = "Failed to read from file",
 	[ERR_NO_MEMORY] = "Out of memory",
+	[ERR_DOUBLE_FREE] = "Multiple frees",
+	[ERR_ARENA_RELEASE_AFTER_ALLOC] = "Temporary arena was freed after parent allocations",
+	[ERR_TEMP_ARENA_FREE] = "Cannot free temporary arena",
 };
 
 char *XError(error e)
@@ -23,8 +27,7 @@ Arena XArenaNew(int size)
 		return (Arena){.err = ERR_NO_MEMORY};
 
 	return (Arena){
-		.err = NO_ERROR,
-		.freed = false,
+		.err = ERR_NO_ERROR,
 		.memory = m,
 		.pos = 0,
 		.size = size,
@@ -33,7 +36,7 @@ Arena XArenaNew(int size)
 
 void *XArenaAlloc(Arena *a, int size)
 {
-	if (a->pos + size >= a->size)
+	if (a->pos + size > a->size)
 	{
 		a->err = ERR_NO_MEMORY;
 		return NULL;
@@ -44,9 +47,42 @@ void *XArenaAlloc(Arena *a, int size)
 	return p;
 }
 
-void XArenaFree(Arena a)
+Arena XArenaTemp(Arena *parent, int size)
 {
+	void *p = XArenaAlloc(parent, size);
+	if (p == NULL)
+		return (Arena){.err = parent->err};
+
+	return (Arena){
+		.err = ERR_NO_ERROR,
+		.memory = p,
+		.pos = 0,
+		.size = size,
+	};
+}
+
+error XArenaReleaseTemp(Arena *temp, Arena *parent)
+{
+	// If allocations have been made after creating the temp Arena
+	if (parent->memory + parent->pos - temp->size != temp->memory)
+		return ERR_ARENA_RELEASE_AFTER_ALLOC;
+
+	parent->pos -= temp->size;
+	temp->err = ERR_MEMORY_FREED;
+	return ERR_NO_ERROR;
+}
+
+error XArenaFree(Arena a)
+{
+	if (a.err == ERR_MEMORY_FREED)
+		return ERR_DOUBLE_FREE;
+
+	if (a.depth != 0)
+		return ERR_TEMP_ARENA_FREE;
+
 	xdefaultFree(a.memory);
+	a.err = ERR_MEMORY_FREED;
+	return ERR_NO_ERROR;
 }
 
 File XReadFile(const char *filepath)
@@ -80,7 +116,40 @@ return_error:
 	return f;
 }
 
-void XFreeFile(File f)
+error XFreeFile(File f)
 {
+	if (f.err == ERR_MEMORY_FREED)
+		return ERR_DOUBLE_FREE;
+
 	xdefaultFree(f.data);
+	f.err = ERR_MEMORY_FREED;
+	return ERR_NO_ERROR;
+}
+
+String XStr(char *s)
+{
+	return (String){
+		.err = ERR_NO_ERROR,
+		.length = strlen(s),
+		.str = s,
+	};
+}
+
+String XAllocStr(Arena *a, const char *s)
+{
+	int length = strlen(s);
+	char *p = (char *)XArenaAlloc(a, length);
+	if (p == NULL)
+		return (String){
+			.err = ERR_NO_MEMORY,
+			.length = 0,
+			.str = NULL,
+		};
+
+	memcpy(p, s, length);
+	return (String){
+		.err = ERR_NO_ERROR,
+		.length = length,
+		.str = p,
+	};
 }
