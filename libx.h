@@ -59,7 +59,7 @@ char *XError(error e);
 // Can only be used with object containing an 'err' field.
 #define Ok(o) (o.err == 0)
 
-// Arena - better memory management
+// Arena
 
 // Allocates new arena with given size. Sets err value on failure.
 Arena ArenaNew(int size);
@@ -72,7 +72,7 @@ void *ArenaAlloc(Arena *a, int size);
 // Frees internal memory pointer. Sets ERR_MEMORY_FREED.
 error ArenaFree(Arena a);
 
-// IO utils - why make it harder than it has to be?
+// IO utils
 
 // Reads file and returns it. Sets error in File.err on failure.
 // Uses default allocator, remember to call XFreeFile().
@@ -80,14 +80,14 @@ File XReadFile(const char *filepath);
 // Use only when not allocated with Arena.
 error XFreeFile(File f);
 
-// Strings - C programmers worst nightmare
+// Strings
 
 // Returns string object from literal
 String Str(char *s);
 // Allocates string in arena
 String StrAlloc(Arena *a, const char *s);
 
-// List - makes life easier
+// List
 
 // Returns pointer to new list
 void *ListCreate(size_t dataSize, size_t length);
@@ -102,8 +102,7 @@ void ListAppend(void *list, u64 item);
 // Removes and returns last element in list.
 void *ListPop(void *list);
 
-#define List(T) T *
-
+#define List(T) T * // List type macro
 #define list(T, size) (T *)ListCreate(sizeof(T), size)
 #define append(list, item) ListAppend(list, (u64)item)
 #define len(list) (ListLen(list))
@@ -150,13 +149,13 @@ char *XError(error e)
 
 Arena ArenaNew(int size)
 {
-    void *m = xdefaultAlloc(size);
-    if (m == NULL)
+    void *p = xdefaultAlloc(size);
+    if (p == NULL)
         return (Arena){.err = ERR_NO_MEMORY};
 
     return (Arena){
         .err = ERR_NO_ERROR,
-        .memory = m,
+        .memory = p,
         .pos = 0,
         .size = size,
         .depth = 0,
@@ -219,12 +218,10 @@ File XReadFile(const char *filepath)
 {
     File f = {0};
 
-    // Open file. EditorOpenFile does not create files and fails on file-not-found
     HANDLE file = CreateFileA(filepath, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE)
         goto return_error;
 
-    // Get file size and read file contents into string buffer
     DWORD bufSize = GetFileSize(file, NULL) + 1;
     DWORD read;
     char *buffer = xdefaultAlloc(bufSize);
