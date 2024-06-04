@@ -27,6 +27,7 @@ typedef enum error
     ERR_ARENA_RELEASE_AFTER_ALLOC, // Temp arena released after parent alloc
     ERR_TEMP_ARENA_FREE,           // Tried to free a temp arena
     ERR_LIST_FULL,                 // List capacity reached
+    ERR_ITERATION_FINISH,          // Iterator is finished
 } error;
 
 typedef struct String
@@ -35,6 +36,13 @@ typedef struct String
     int length;
     error err;
 } String;
+
+typedef struct StringIter
+{
+    String s;
+    int pos;
+    error err;
+} StringIter;
 
 typedef struct Arena
 {
@@ -82,10 +90,25 @@ error XFreeFile(File f);
 
 // Strings
 
-// Returns string object from literal
-String Str(char *s);
 // Allocates string in arena
 String StrAlloc(Arena *a, const char *s);
+// Allocates a copy of the string s
+String StrCopy(Arena *a, String s);
+// Returns character at pos in string. Panics if out of bounds.
+char CharAt(String s, int pos);
+// Returns the number of times c appears in s
+int StrCount(String s, char c);
+// Returns new string converted to upper case
+String StrUpper(Arena *a, String s);
+// Returns new string converted to lower case
+String StrLower(Arena *a, String s);
+
+// String iterators
+
+// Returns iterator
+StringIter StrToIterator(String s);
+// Returns string before next occurance of the delimeter. Can give empty string.
+String StrSplit(StringIter *iter, char delim);
 
 // List
 
@@ -140,6 +163,7 @@ static char *error_msgs[] = {
     [ERR_ARENA_RELEASE_AFTER_ALLOC] = "Temporary arena was freed after parent allocations",
     [ERR_TEMP_ARENA_FREE] = "Cannot free temporary arena",
     [ERR_LIST_FULL] = "List surpassed capacity",
+    [ERR_ITERATION_FINISH] = "Iterator is empty",
 };
 
 char *XError(error e)
@@ -177,7 +201,7 @@ void *ArenaAlloc(Arena *a, int size)
 
 Arena ArenaTemp(Arena *parent, int size)
 {
-    void *p = XArenaAlloc(parent, size);
+    void *p = ArenaAlloc(parent, size);
     if (p == NULL)
         return (Arena){.err = parent->err};
 
@@ -253,19 +277,13 @@ error XFreeFile(File f)
     return ERR_NO_ERROR;
 }
 
-String Str(char *s)
-{
-    return (String){
-        .err = ERR_NO_ERROR,
-        .length = strlen(s),
-        .str = s,
-    };
-}
+#define Str(s) \
+    (String) { .err = ERR_NO_ERROR, .length = strlen(s), .str = s }
 
 String StrAlloc(Arena *a, const char *s)
 {
     int length = strlen(s);
-    char *p = (char *)XArenaAlloc(a, length);
+    char *p = ArenaAlloc(a, length);
     if (p == NULL)
         return (String){
             .err = ERR_NO_MEMORY,
@@ -278,6 +296,104 @@ String StrAlloc(Arena *a, const char *s)
         .err = ERR_NO_ERROR,
         .length = length,
         .str = p,
+    };
+}
+
+String StrCopy(Arena *a, String s)
+{
+    char *str = ArenaAlloc(a, s.length);
+    if (str == NULL)
+        return (String){.err = ERR_NO_MEMORY};
+
+    memcpy(str, s.str, s.length);
+    return (String){.err = ERR_NO_ERROR, .length = s.length, .str = str};
+}
+
+char CharAt(String s, int pos)
+{
+    if (s.length <= pos)
+    {
+        printf("Panic: string index out of bounds\n");
+        exit(1);
+    }
+    return *(s.str + pos);
+}
+
+int StrCount(String s, char c)
+{
+    int count = 0;
+    for (int i = 0; i < s.length; i++)
+    {
+        if (CharAt(s, i) == c)
+            count++;
+    }
+    return count;
+}
+
+String StrUpper(Arena *a, String s)
+{
+    String upper = StrCopy(a, s);
+    for (int i = 0; i < s.length; i++)
+    {
+        char c = CharAt(s, i);
+        if (c >= 'a' && c <= 'z')
+            c -= 32;
+        *(upper.str + i) = c;
+    }
+
+    return upper;
+}
+
+String StrLower(Arena *a, String s)
+{
+    String lower = StrCopy(a, s);
+    for (int i = 0; i < s.length; i++)
+    {
+        char c = CharAt(s, i);
+        if (c >= 'A' && c <= 'Z')
+            c += 32;
+        *(lower.str + i) = c;
+    }
+
+    return lower;
+}
+
+StringIter StrToIterator(String s)
+{
+    return (StringIter){
+        .err = ERR_NO_ERROR,
+        .pos = 0,
+        .s = s,
+    };
+}
+
+String StrSplit(StringIter *iter, char delim)
+{
+    int start = iter->pos;
+    while (iter->pos < iter->s.length)
+    {
+        char c = CharAt(iter->s, iter->pos);
+        if (c == delim)
+        {
+            char *str = iter->s.str + start;
+            int length = iter->pos - start;
+            iter->pos += 1;
+
+            return (String){
+                .length = length,
+                .str = str,
+                .err = ERR_NO_ERROR,
+            };
+        }
+
+        iter->pos++;
+    }
+
+    iter->err = ERR_ITERATION_FINISH;
+    return (String){
+        .length = iter->pos - start,
+        .str = iter->s.str + start,
+        .err = ERR_NO_ERROR,
     };
 }
 
