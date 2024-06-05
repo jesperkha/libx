@@ -4,6 +4,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <windows.h>
 
 #define u8 unsigned char
 #define u16 unsigned short
@@ -30,6 +31,7 @@ typedef enum error
     ERR_TEMP_ARENA_FREE,           // Tried to free a temp arena
     ERR_LIST_FULL,                 // List capacity reached
     ERR_ITERATION_FINISH,          // Iterator is finished
+    ERR_FILE_NOT_FOUND,            // File/directory was not found
 } error;
 
 typedef struct String
@@ -61,10 +63,17 @@ typedef struct Arena
 typedef struct File
 {
     char filepath[260];
-    int size;
+    u64 size;
     char *data;
     error err;
 } File;
+
+typedef struct FileIter
+{
+    WIN32_FIND_DATA data;
+    HANDLE hFind;
+    error err;
+} FileIter;
 
 // Returns string representation of error code.
 char *XError(error e);
@@ -92,6 +101,10 @@ error ArenaFree(Arena *a);
 File XReadFile(const char *filepath);
 // Use only when not allocated with Arena.
 error XFreeFile(File f);
+// Returns file iterator for given directory
+FileIter XReadDir(const char *path);
+// Closes file iterator. Only necessary if iteration is stopped early.
+error XCloseFileIter(FileIter *iter);
 
 // Strings
 
@@ -179,6 +192,7 @@ static char *error_msgs[] = {
     [ERR_TEMP_ARENA_FREE] = "Cannot free temporary arena",
     [ERR_LIST_FULL] = "List surpassed capacity",
     [ERR_ITERATION_FINISH] = "Iterator is empty",
+    [ERR_FILE_NOT_FOUND] = "File not found",
 };
 
 char *XError(error e)
@@ -302,6 +316,40 @@ error XFreeFile(File f)
     xdefaultFree(f.data);
     f.err = ERR_MEMORY_FREED;
     return ERR_NO_ERROR;
+}
+
+FileIter XReadDir(const char *path)
+{
+    FileIter iter = {0};
+
+    // FindFirstFile expects a * wildcard at end
+    char buf[512];
+    strcpy(buf, path);
+    strcat(buf, "\\*");
+
+    HANDLE hFind = FindFirstFileA(buf, &iter.data);
+    if (hFind == INVALID_HANDLE_VALUE)
+        return (FileIter){.err = ERR_FILE_NOT_FOUND};
+
+    iter.hFind = hFind;
+    return iter;
+}
+
+File NextFile(FileIter *iter)
+{
+    if (!Ok(*iter))
+        return (File){.err = iter->err};
+
+    File f = {0};
+    strcpy(f.filepath, iter->data.cFileName);
+    f.size = (u64)iter->data.nFileSizeLow | ((u64)iter->data.nFileSizeHigh << 32);
+    if (!FindNextFileA(iter->hFind, &iter->data))
+    {
+        iter->err = ERR_ITERATION_FINISH;
+        FindClose(iter->hFind);
+    }
+
+    return f;
 }
 
 static ListHeader *getHeader(void *ptr)
