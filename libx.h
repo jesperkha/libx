@@ -102,6 +102,8 @@ int StrCount(String s, char c);
 String StrUpper(Arena *a, String s);
 // Returns new string converted to lower case
 String StrLower(Arena *a, String s);
+// Returns index of first occurence of c. -1 if not found.
+int StrFind(String s, char c);
 
 // String iterators
 
@@ -277,6 +279,64 @@ error XFreeFile(File f)
     return ERR_NO_ERROR;
 }
 
+static ListHeader *getHeader(void *ptr)
+{
+    return (ListHeader *)(ptr - HEADER_SIZE);
+}
+
+void *ListCreate(size_t dataSize, size_t length)
+{
+    ListHeader header = {
+        .length = 0,
+        .cap = length,
+        .dataSize = dataSize,
+    };
+
+    void *listptr = xdefaultAlloc(HEADER_SIZE + (dataSize * length));
+    memcpy(listptr, &header, HEADER_SIZE);
+    return (listptr + HEADER_SIZE);
+}
+
+int ListLen(void *list)
+{
+    return getHeader(list)->length;
+}
+
+int ListCap(void *list)
+{
+    return getHeader(list)->cap;
+}
+
+void ListAppend(void *list, u64 item)
+{
+    ListHeader *header = getHeader(list);
+    int size = header->dataSize;
+
+    if (header->length < header->cap)
+    {
+        int length = (header->length * size);
+
+        if (size > sizeof(u64))
+            memcpy(list + length, (void *)item, size);
+        else
+            memcpy(list + length, &item, size);
+
+        header->length++;
+    }
+}
+
+void *ListPop(void *list)
+{
+    ListHeader *header = getHeader(list);
+    header->length--;
+    return list + (header->length * header->dataSize);
+}
+
+void ListFree(void *list)
+{
+    free(list - HEADER_SIZE);
+}
+
 #define Str(s) \
     (String) { .err = ERR_NO_ERROR, .length = strlen(s), .str = s }
 
@@ -397,62 +457,12 @@ String StrSplit(StringIter *iter, char delim)
     };
 }
 
-static ListHeader *getHeader(void *ptr)
+int StrFind(String s, char c)
 {
-    return (ListHeader *)(ptr - HEADER_SIZE);
-}
-
-void *ListCreate(size_t dataSize, size_t length)
-{
-    ListHeader header = {
-        .length = 0,
-        .cap = length,
-        .dataSize = dataSize,
-    };
-
-    void *listptr = xdefaultAlloc(HEADER_SIZE + (dataSize * length));
-    memcpy(listptr, &header, HEADER_SIZE);
-    return (listptr + HEADER_SIZE);
-}
-
-int ListLen(void *list)
-{
-    return getHeader(list)->length;
-}
-
-int ListCap(void *list)
-{
-    return getHeader(list)->cap;
-}
-
-void ListAppend(void *list, u64 item)
-{
-    ListHeader *header = getHeader(list);
-    int size = header->dataSize;
-
-    if (header->length < header->cap)
-    {
-        int length = (header->length * size);
-
-        if (size > sizeof(u64))
-            memcpy(list + length, (void *)item, size);
-        else
-            memcpy(list + length, &item, size);
-
-        header->length++;
-    }
-}
-
-void *ListPop(void *list)
-{
-    ListHeader *header = getHeader(list);
-    header->length--;
-    return list + (header->length * header->dataSize);
-}
-
-void ListFree(void *list)
-{
-    free(list - HEADER_SIZE);
+    for (int i = 0; i < s.length; i++)
+        if (CharAt(s, i) == c)
+            return i;
+    return -1;
 }
 
 #endif
