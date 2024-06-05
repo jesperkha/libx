@@ -39,6 +39,9 @@ typedef struct String
     error err;
 } String;
 
+#define Str(s) \
+    (String) { .err = ERR_NO_ERROR, .length = strlen(s), .str = s }
+
 typedef struct StringIter
 {
     String s;
@@ -67,7 +70,7 @@ typedef struct File
 char *XError(error e);
 
 // Can only be used with object containing an 'err' field.
-#define Ok(o) (o.err == 0)
+#define Ok(o) ((o).err == 0)
 
 // Arena
 
@@ -80,7 +83,7 @@ error ArenaReleaseTemp(Arena *temp, Arena *parent);
 // Returns NULL on failure and sets err value.
 void *ArenaAlloc(Arena *a, int size);
 // Frees internal memory pointer. Sets ERR_MEMORY_FREED.
-error ArenaFree(Arena a);
+error ArenaFree(Arena *a);
 
 // IO utils
 
@@ -91,6 +94,10 @@ File XReadFile(const char *filepath);
 error XFreeFile(File f);
 
 // Strings
+
+// Note that all of these functions will short circuit/return default/error
+// values if the string passed has an error. Therefore it is safe to chain
+// multiple calls even with faulty strings.
 
 // Allocates string in arena
 String StrAlloc(Arena *a, const char *s);
@@ -196,6 +203,9 @@ Arena ArenaNew(int size)
 
 void *ArenaAlloc(Arena *a, int size)
 {
+    if (!Ok(*a))
+        return NULL;
+
     if (a->pos + size > a->size)
     {
         a->err = ERR_NO_MEMORY;
@@ -209,6 +219,9 @@ void *ArenaAlloc(Arena *a, int size)
 
 Arena ArenaTemp(Arena *parent, int size)
 {
+    if (!Ok(*parent))
+        (Arena){.err = parent->err};
+
     void *p = ArenaAlloc(parent, size);
     if (p == NULL)
         return (Arena){.err = parent->err};
@@ -224,6 +237,11 @@ Arena ArenaTemp(Arena *parent, int size)
 
 error ArenaReleaseTemp(Arena *temp, Arena *parent)
 {
+    if (!Ok(*temp))
+        return temp->err;
+    if (!Ok(*parent))
+        return parent->err;
+
     // If allocations have been made after creating the temp Arena
     if (parent->memory + parent->pos - temp->size != temp->memory)
         return ERR_ARENA_RELEASE_AFTER_ALLOC;
@@ -233,16 +251,17 @@ error ArenaReleaseTemp(Arena *temp, Arena *parent)
     return ERR_NO_ERROR;
 }
 
-error ArenaFree(Arena a)
+error ArenaFree(Arena *a)
 {
-    if (a.err == ERR_MEMORY_FREED)
+    if (a->err == ERR_MEMORY_FREED)
         return ERR_DOUBLE_FREE;
-
-    if (a.depth != 0)
+    if (!Ok(*a))
+        return a->err;
+    if (a->depth != 0)
         return ERR_TEMP_ARENA_FREE;
 
-    xdefaultFree(a.memory);
-    a.err = ERR_MEMORY_FREED;
+    xdefaultFree(a->memory);
+    a->err = ERR_MEMORY_FREED;
     return ERR_NO_ERROR;
 }
 
@@ -343,8 +362,9 @@ void ListFree(void *list)
     free(list - HEADER_SIZE);
 }
 
-#define Str(s) \
-    (String) { .err = ERR_NO_ERROR, .length = strlen(s), .str = s }
+#define returnIfError(s) \
+    if (!Ok(s))          \
+        return (String) { .err = s.err, .length = 0 }
 
 String StrAlloc(Arena *a, const char *s)
 {
@@ -367,6 +387,8 @@ String StrAlloc(Arena *a, const char *s)
 
 String StrCopy(Arena *a, String s)
 {
+    returnIfError(s);
+
     char *str = ArenaAlloc(a, s.length);
     if (str == NULL)
         return (String){.err = ERR_NO_MEMORY};
@@ -382,11 +404,20 @@ char CharAt(String s, int pos)
         printf("Panic: string index out of bounds\n");
         exit(1);
     }
+    if (!Ok(s))
+    {
+        printf("Panic: CharAt on string with error\n");
+        exit(1);
+    }
+
     return *(s.str + pos);
 }
 
 int StrCount(String s, char c)
 {
+    if (!Ok(s))
+        return 0;
+
     int count = 0;
     for (int i = 0; i < s.length; i++)
     {
@@ -398,7 +429,11 @@ int StrCount(String s, char c)
 
 String StrUpper(Arena *a, String s)
 {
+    returnIfError(s);
+
     String upper = StrCopy(a, s);
+    returnIfError(upper);
+
     for (int i = 0; i < s.length; i++)
     {
         char c = CharAt(s, i);
@@ -412,7 +447,11 @@ String StrUpper(Arena *a, String s)
 
 String StrLower(Arena *a, String s)
 {
+    returnIfError(s);
+
     String lower = StrCopy(a, s);
+    returnIfError(lower);
+
     for (int i = 0; i < s.length; i++)
     {
         char c = CharAt(s, i);
@@ -427,7 +466,7 @@ String StrLower(Arena *a, String s)
 StringIter StrToIterator(String s)
 {
     return (StringIter){
-        .err = ERR_NO_ERROR,
+        .err = s.err,
         .pos = 0,
         .s = s,
     };
@@ -435,6 +474,9 @@ StringIter StrToIterator(String s)
 
 String StrSplit(StringIter *iter, char delim)
 {
+    if (!Ok(*iter))
+        return (String){.err = iter->err};
+
     int start = iter->pos;
     while (iter->pos < iter->s.length)
     {
@@ -465,6 +507,8 @@ String StrSplit(StringIter *iter, char delim)
 
 int StrFind(String s, char c)
 {
+    if (!Ok(s))
+        return -1;
     for (int i = 0; i < s.length; i++)
         if (CharAt(s, i) == c)
             return i;
@@ -473,6 +517,9 @@ int StrFind(String s, char c)
 
 String StrConcat(Arena *a, String s1, String s2)
 {
+    returnIfError(s1);
+    returnIfError(s2);
+
     int length = s1.length + s2.length;
     char *str = ArenaAlloc(a, length);
     memcpy(str, s1.str, s1.length);
@@ -486,6 +533,8 @@ String StrConcat(Arena *a, String s1, String s2)
 
 bool StrCompare(String a, String b)
 {
+    if (!Ok(a) || !Ok(b))
+        return false;
     if (a.length != b.length)
         return false;
     for (int i = 0; i < a.length; i++)
