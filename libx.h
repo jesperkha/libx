@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #define u8 unsigned char
 #define u16 unsigned short
 #define u32 unsigned int
@@ -102,8 +104,12 @@ int StrCount(String s, char c);
 String StrUpper(Arena *a, String s);
 // Returns new string converted to lower case
 String StrLower(Arena *a, String s);
+// Allocates and returns new concatinated string.
+String StrConcat(Arena *a, String s1, String s2);
 // Returns index of first occurence of c. -1 if not found.
 int StrFind(String s, char c);
+// Returns true if strings are identical
+bool StrCompare(String a, String b);
 
 // String iterators
 
@@ -463,6 +469,29 @@ int StrFind(String s, char c)
         if (CharAt(s, i) == c)
             return i;
     return -1;
+}
+
+String StrConcat(Arena *a, String s1, String s2)
+{
+    int length = s1.length + s2.length;
+    char *str = ArenaAlloc(a, length);
+    memcpy(str, s1.str, s1.length);
+    memcpy(str + s1.length, s2.str, s2.length);
+    return (String){
+        .err = ERR_NO_ERROR,
+        .str = str,
+        .length = length,
+    };
+}
+
+bool StrCompare(String a, String b)
+{
+    if (a.length != b.length)
+        return false;
+    for (int i = 0; i < a.length; i++)
+        if (CharAt(a, i) != CharAt(b, i))
+            return false;
+    return true;
 }
 
 #endif
