@@ -64,8 +64,12 @@ typedef struct File
 {
     char filepath[260];
     u64 size;
-    char *data;
+    char *data; // Always check NULL, .open, and .err
     error err;
+
+    bool open;  // If true, file contains a data field with its contents
+    bool isDir; // True if the filepath corresponds with a directory
+    bool readOnly;
 } File;
 
 typedef struct FileIter
@@ -100,9 +104,11 @@ error ArenaFree(Arena *a);
 // Uses default allocator, remember to call XFreeFile().
 File XReadFile(const char *filepath);
 // Use only when not allocated with Arena.
-error XFreeFile(File f);
+error XFreeFile(File *f);
 // Returns file iterator for given directory
 FileIter XReadDir(const char *path);
+// Returns next file if any. Closes iterator when done.
+File FileIterNext(FileIter *iter);
 // Closes file iterator. Only necessary if iteration is stopped early.
 error XCloseFileIter(FileIter *iter);
 
@@ -187,6 +193,7 @@ static char *error_msgs[] = {
     [ERR_NO_ERROR] = "No error",
     [ERR_FILE_READ] = "Failed to read from file",
     [ERR_NO_MEMORY] = "Out of memory",
+    [ERR_MEMORY_FREED] = "Memory marked as free",
     [ERR_DOUBLE_FREE] = "Multiple frees",
     [ERR_ARENA_RELEASE_AFTER_ALLOC] = "Temporary arena was freed after parent allocations",
     [ERR_TEMP_ARENA_FREE] = "Cannot free temporary arena",
@@ -300,6 +307,7 @@ File XReadFile(const char *filepath)
     buffer[bufSize - 1] = 0;
     f.size = bufSize - 1;
     f.data = buffer;
+    f.open = true;
     strncpy(f.filepath, filepath, 260);
     return f;
 
@@ -308,13 +316,14 @@ return_error:
     return f;
 }
 
-error XFreeFile(File f)
+error XFreeFile(File *f)
 {
-    if (f.err == ERR_MEMORY_FREED)
+    if (f->err == ERR_MEMORY_FREED)
         return ERR_DOUBLE_FREE;
 
-    xdefaultFree(f.data);
-    f.err = ERR_MEMORY_FREED;
+    xdefaultFree(f->data);
+    f->err = ERR_MEMORY_FREED;
+    f->open = false;
     return ERR_NO_ERROR;
 }
 
@@ -335,7 +344,7 @@ FileIter XReadDir(const char *path)
     return iter;
 }
 
-File NextFile(FileIter *iter)
+File FileIterNext(FileIter *iter)
 {
     if (!Ok(*iter))
         return (File){.err = iter->err};
@@ -343,6 +352,9 @@ File NextFile(FileIter *iter)
     File f = {0};
     strcpy(f.filepath, iter->data.cFileName);
     f.size = (u64)iter->data.nFileSizeLow | ((u64)iter->data.nFileSizeHigh << 32);
+    f.isDir = iter->data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+    f.readOnly = iter->data.dwFileAttributes & FILE_ATTRIBUTE_READONLY;
+
     if (!FindNextFileA(iter->hFind, &iter->data))
     {
         iter->err = ERR_ITERATION_FINISH;
@@ -350,6 +362,15 @@ File NextFile(FileIter *iter)
     }
 
     return f;
+}
+
+error XCloseFileIter(FileIter *iter)
+{
+    if (!Ok(*iter))
+        return iter->err;
+    FindClose(iter->hFind);
+    iter->err = ERR_ITERATION_FINISH;
+    return ERR_NO_ERROR;
 }
 
 static ListHeader *getHeader(void *ptr)
