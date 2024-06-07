@@ -473,9 +473,9 @@ void ListFree(void *list)
 
 String StrAlloc(Arena *a, const char *s)
 {
-    returnIfError(*a);
-    if (s == NULL)
+    if (s == NULL || a == NULL)
         return (String){.err = ERR_NULL_PTR};
+    returnIfError(*a);
 
     int length = strlen(s);
     char *p = ArenaAlloc(a, length);
@@ -496,6 +496,8 @@ String StrAlloc(Arena *a, const char *s)
 
 String StrCopy(Arena *a, String s)
 {
+    if (a == NULL)
+        return (String){.err = ERR_NULL_PTR};
     returnIfError(s);
 
     char *str = ArenaAlloc(a, s.length);
@@ -508,14 +510,14 @@ String StrCopy(Arena *a, String s)
 
 char CharAt(String s, int pos)
 {
-    if (s.length <= pos)
-    {
-        printf("Panic: string index out of bounds\n");
-        exit(1);
-    }
     if (!Ok(s))
     {
         printf("Panic: CharAt on string with error\n");
+        exit(1);
+    }
+    if (s.length <= pos)
+    {
+        printf("Panic: string index out of bounds\n");
         exit(1);
     }
 
@@ -538,6 +540,8 @@ int StrCount(String s, char c)
 
 String StrUpper(Arena *a, String s)
 {
+    if (a == NULL)
+        return (String){.err = ERR_NULL_PTR};
     returnIfError(s);
 
     String upper = StrCopy(a, s);
@@ -556,6 +560,8 @@ String StrUpper(Arena *a, String s)
 
 String StrLower(Arena *a, String s)
 {
+    if (a == NULL)
+        return (String){.err = ERR_NULL_PTR};
     returnIfError(s);
 
     String lower = StrCopy(a, s);
@@ -583,6 +589,8 @@ StringIter StrToIterator(String s)
 
 String StrSplit(StringIter *iter, char delim)
 {
+    if (iter == NULL)
+        return (String){.err = ERR_NULL_PTR};
     if (!Ok(*iter))
         return (String){.err = iter->err};
 
@@ -626,6 +634,8 @@ int StrFind(String s, char c)
 
 String StrConcat(Arena *a, String s1, String s2)
 {
+    if (a == NULL)
+        return (String){.err = ERR_NULL_PTR};
     returnIfError(s1);
     returnIfError(s2);
 
