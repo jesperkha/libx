@@ -32,6 +32,7 @@ typedef enum error
     ERR_LIST_FULL,                 // List capacity reached
     ERR_ITERATION_FINISH,          // Iterator is finished
     ERR_FILE_NOT_FOUND,            // File/directory was not found
+    ERR_NULL_PTR,                  // NULL pointer passed
 } error;
 
 typedef struct String
@@ -85,16 +86,23 @@ char *XError(error e);
 // Can only be used with object containing an 'err' field.
 #define Ok(o) ((o).err == 0)
 
+#define assertOk(o)                                \
+    if (!Ok(o))                                    \
+    {                                              \
+        printf("assertOk: %s\n", XError((o).err)); \
+        exit(1);                                   \
+    }
+
 // Arena
 
 // Allocates new arena with given size. Sets err value on failure.
-Arena ArenaNew(int size);
+Arena ArenaNew(u64 size);
 // Allocates a new temporary arena within the parent.
-Arena ArenaTemp(Arena *parent, int size);
+Arena ArenaTemp(Arena *parent, u64 size);
 // Releases temporary arena. Fails if allocations to the parent were made after the temp was created.
 error ArenaReleaseTemp(Arena *temp, Arena *parent);
 // Returns NULL on failure and sets err value.
-void *ArenaAlloc(Arena *a, int size);
+void *ArenaAlloc(Arena *a, u64 size);
 // Frees internal memory pointer. Sets ERR_MEMORY_FREED.
 error ArenaFree(Arena *a);
 
@@ -200,14 +208,20 @@ static char *error_msgs[] = {
     [ERR_LIST_FULL] = "List surpassed capacity",
     [ERR_ITERATION_FINISH] = "Iterator is empty",
     [ERR_FILE_NOT_FOUND] = "File not found",
+    [ERR_NULL_PTR] = "NULL pointer exception",
 };
 
 char *XError(error e)
 {
+    if (e > sizeof(error_msgs))
+    {
+        printf("error out of bounds\n");
+        exit(1);
+    }
     return error_msgs[e];
 }
 
-Arena ArenaNew(int size)
+Arena ArenaNew(u64 size)
 {
     void *p = xdefaultAlloc(size);
     if (p == NULL)
@@ -222,8 +236,10 @@ Arena ArenaNew(int size)
     };
 }
 
-void *ArenaAlloc(Arena *a, int size)
+void *ArenaAlloc(Arena *a, u64 size)
 {
+    if (a == NULL)
+        return NULL;
     if (!Ok(*a))
         return NULL;
 
@@ -238,8 +254,10 @@ void *ArenaAlloc(Arena *a, int size)
     return p;
 }
 
-Arena ArenaTemp(Arena *parent, int size)
+Arena ArenaTemp(Arena *parent, u64 size)
 {
+    if (parent == NULL)
+        return (Arena){.err = ERR_NULL_PTR};
     if (!Ok(*parent))
         (Arena){.err = parent->err};
 
@@ -258,6 +276,8 @@ Arena ArenaTemp(Arena *parent, int size)
 
 error ArenaReleaseTemp(Arena *temp, Arena *parent)
 {
+    if (temp == NULL || parent == NULL)
+        return ERR_NULL_PTR;
     if (!Ok(*temp))
         return temp->err;
     if (!Ok(*parent))
@@ -274,6 +294,8 @@ error ArenaReleaseTemp(Arena *temp, Arena *parent)
 
 error ArenaFree(Arena *a)
 {
+    if (a == NULL)
+        return ERR_NULL_PTR;
     if (a->err == ERR_MEMORY_FREED)
         return ERR_DOUBLE_FREE;
     if (!Ok(*a))
@@ -288,6 +310,9 @@ error ArenaFree(Arena *a)
 
 File XReadFile(const char *filepath)
 {
+    if (filepath == NULL)
+        return (File){.err = ERR_NULL_PTR};
+
     File f = {0};
 
     HANDLE file = CreateFileA(filepath, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -318,8 +343,12 @@ return_error:
 
 error XFreeFile(File *f)
 {
+    if (f == NULL)
+        return ERR_NULL_PTR;
     if (f->err == ERR_MEMORY_FREED)
         return ERR_DOUBLE_FREE;
+    if (!Ok(*f))
+        return f->err;
 
     xdefaultFree(f->data);
     f->err = ERR_MEMORY_FREED;
@@ -329,6 +358,9 @@ error XFreeFile(File *f)
 
 FileIter XReadDir(const char *path)
 {
+    if (path == NULL)
+        return (FileIter){.err = ERR_NULL_PTR};
+
     FileIter iter = {0};
 
     // FindFirstFile expects a * wildcard at end
@@ -346,6 +378,8 @@ FileIter XReadDir(const char *path)
 
 File FileIterNext(FileIter *iter)
 {
+    if (iter == NULL)
+        return (File){.err = ERR_NULL_PTR};
     if (!Ok(*iter))
         return (File){.err = iter->err};
 
@@ -366,6 +400,8 @@ File FileIterNext(FileIter *iter)
 
 error XCloseFileIter(FileIter *iter)
 {
+    if (iter == NULL)
+        return ERR_NULL_PTR;
     if (!Ok(*iter))
         return iter->err;
     FindClose(iter->hFind);
@@ -433,10 +469,14 @@ void ListFree(void *list)
 
 #define returnIfError(s) \
     if (!Ok(s))          \
-        return (String) { .err = s.err, .length = 0 }
+        return (String) { .err = (s).err, .length = 0 }
 
 String StrAlloc(Arena *a, const char *s)
 {
+    returnIfError(*a);
+    if (s == NULL)
+        return (String){.err = ERR_NULL_PTR};
+
     int length = strlen(s);
     char *p = ArenaAlloc(a, length);
     if (p == NULL)
