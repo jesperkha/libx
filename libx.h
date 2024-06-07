@@ -93,6 +93,9 @@ char *XError(error e);
         exit(1);                                   \
     }
 
+// Prints message and exits with status 1
+void panic(char *msg);
+
 // Arena
 
 // Allocates new arena with given size. Sets err value on failure.
@@ -187,6 +190,12 @@ void *ListPop(void *list);
 #define xdefaultAlloc(size) (HeapAlloc(GetProcessHeap(), 0, size))
 #define xdefaultFree(p) (HeapFree(GetProcessHeap(), 0, p))
 
+void panic(char *msg)
+{
+    printf("Panic: %s\n", msg);
+    exit(1);
+}
+
 typedef struct ListHeader
 {
     int length;
@@ -214,10 +223,8 @@ static char *error_msgs[] = {
 char *XError(error e)
 {
     if (e > sizeof(error_msgs))
-    {
-        printf("error out of bounds\n");
-        exit(1);
-    }
+        panic("error out of bounds\n");
+
     return error_msgs[e];
 }
 
@@ -511,15 +518,9 @@ String StrCopy(Arena *a, String s)
 char CharAt(String s, int pos)
 {
     if (!Ok(s))
-    {
-        printf("Panic: CharAt on string with error\n");
-        exit(1);
-    }
+        panic("CharAt on string with error\n");
     if (s.length <= pos)
-    {
-        printf("Panic: string index out of bounds\n");
-        exit(1);
-    }
+        panic("string index out of bounds\n");
 
     return *(s.str + pos);
 }
