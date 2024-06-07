@@ -83,18 +83,15 @@ typedef struct FileIter
 // Returns string representation of error code.
 char *XError(error e);
 
+// Prints message and exits with status 1
+void panic(char *msg);
+
 // Can only be used with object containing an 'err' field.
 #define Ok(o) ((o).err == 0)
 
-#define assertOk(o)                                \
-    if (!Ok(o))                                    \
-    {                                              \
-        printf("assertOk: %s\n", XError((o).err)); \
-        exit(1);                                   \
-    }
-
-// Prints message and exits with status 1
-void panic(char *msg);
+#define assertOk(o) \
+    if (!Ok(o))     \
+        panic(XError((o).err));
 
 // Arena
 
