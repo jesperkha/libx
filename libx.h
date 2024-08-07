@@ -1,54 +1,49 @@
-// Include implementation with:
-// #define LIBX_IMPL
-
 #pragma once
 
 #include <stdbool.h>
 #include <windows.h>
 
-#define u8 unsigned char
-#define u16 unsigned short
-#define u32 unsigned int
-#define u64 unsigned long long
-#define i8 char
-#define i16 short
-#define i32 int
-#define i64 long
-#define f32 float
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef unsigned int u32;
+typedef unsigned long long u64;
+typedef char i8;
+typedef short i16;
+typedef int i32;
+typedef long long i64;
+typedef float f32;
 
-// Defer a function call or expression to be evaluated after the preceding block.
 #define defer(f) for (int __defer_i = 0; !__defer_i; (f, __defer_i++))
 
-// Error code. Get message with XError().
 typedef enum error
 {
-    ERR_NO_ERROR,                  // No error
-    ERR_FILE_READ,                 // Failed to read file
-    ERR_NO_MEMORY,                 // Ran out of memory
-    ERR_MEMORY_FREED,              // Marked as freed memory
-    ERR_DOUBLE_FREE,               // Memory freed more than once
-    ERR_ARENA_RELEASE_AFTER_ALLOC, // Temp arena released after parent alloc
-    ERR_TEMP_ARENA_FREE,           // Tried to free a temp arena
-    ERR_LIST_FULL,                 // List capacity reached
-    ERR_ITERATION_FINISH,          // Iterator is finished
-    ERR_FILE_NOT_FOUND,            // File/directory was not found
-    ERR_NULL_PTR,                  // NULL pointer passed
+    ERR_NO_ERROR = 0,
+    ERR_FILE_READ,
+    ERR_NO_MEMORY,
+    ERR_MEMORY_FREED,
+    ERR_DOUBLE_FREE,
+    ERR_ARENA_RELEASE_AFTER_ALLOC,
+    ERR_TEMP_ARENA_FREE,
+    ERR_LIST_FULL,
+    ERR_ITERATION_FINISH,
+    ERR_FILE_NOT_FOUND,
+    ERR_NULL_PTR,
 } error;
 
 typedef struct String
 {
     char *str;
-    int length;
+    u32 length;
     error err;
 } String;
 
-#define Str(s) \
-    (String) { .err = ERR_NO_ERROR, .length = strlen(s), .str = s }
+#define STRING(s) \
+    (String) { .err = 0, .length = strlen((s)), .str = (s) }
 
 typedef struct StringIter
 {
     String s;
-    int pos;
+    u32 pos;
     error err;
 } StringIter;
 
@@ -93,7 +88,7 @@ void panic(char *msg);
     if (!Ok(o))     \
         panic(XError((o).err));
 
-// Arena
+//: doc_begin
 
 // Allocates new arena with given size. Sets err value on failure.
 Arena ArenaNew(u64 size);
@@ -105,8 +100,6 @@ error ArenaReleaseTemp(Arena *temp, Arena *parent);
 void *ArenaAlloc(Arena *a, u64 size);
 // Frees internal memory pointer. Sets ERR_MEMORY_FREED.
 error ArenaFree(Arena *a);
-
-// IO utils
 
 // Reads file and returns it. Sets error in File.err on failure.
 // Uses default allocator, remember to call XFreeFile().
@@ -120,20 +113,21 @@ File FileIterNext(FileIter *iter);
 // Closes file iterator. Only necessary if iteration is stopped early.
 error XCloseFileIter(FileIter *iter);
 
-// Strings
-
 // Note that all of these functions will short circuit/return default/error
 // values if the string passed has an error. Therefore it is safe to chain
 // multiple calls even with faulty strings.
 
+void prints(String s);
 // Allocates string in arena
 String StrAlloc(Arena *a, const char *s);
 // Allocates a copy of the string s
 String StrCopy(Arena *a, String s);
+// Returns substring of s from start to end
+String StrSub(String s, u32 start, u32 end);
 // Returns character at pos in string. Panics if out of bounds.
-char CharAt(String s, int pos);
+char CharAt(String s, u32 pos);
 // Returns the number of times c appears in s
-int StrCount(String s, char c);
+u32 StrCount(String s, char c);
 // Returns new string converted to upper case
 String StrUpper(Arena *a, String s);
 // Returns new string converted to lower case
@@ -141,18 +135,18 @@ String StrLower(Arena *a, String s);
 // Allocates and returns new concatinated string.
 String StrConcat(Arena *a, String s1, String s2);
 // Returns index of first occurence of c. -1 if not found.
-int StrFind(String s, char c);
+u32 StrFind(String s, char c);
+// Returns index of first occurence of word, -1 if not found.
+u32 StrFindWord(String s, char *word);
+// Returns index of first occurence of word, -1 if not found.
+u32 StrFindString(String s, String word);
 // Returns true if strings are identical
 bool StrCompare(String a, String b);
 
-// String iterators
-
-// Returns iterator
 StringIter StrToIterator(String s);
+StringIter StrToIteratorEx(char *string, u32 length);
 // Returns string before next occurance of the delimeter. Can give empty string.
 String StrSplit(StringIter *iter, char delim);
-
-// List
 
 // Returns pointer to new list
 void *ListCreate(size_t dataSize, size_t length);
@@ -167,6 +161,8 @@ void ListAppend(void *list, u64 item);
 // Removes and returns last element in list.
 void *ListPop(void *list);
 
+//: doc_end
+
 #define List(T) T * // List type macro
 #define list(T, size) (T *)ListCreate(sizeof(T), size)
 #define append(list, item) ListAppend(list, (u64)item)
@@ -176,13 +172,14 @@ void *ListPop(void *list);
 
 //////////////////////////////////////////////////////////////////
 
-// Implementation, include once by defining LIBX_IMPL before #include
+// Implementation, include once by defining LIBX before #include
 
-#ifdef LIBX_IMPL
+#ifdef LIBX
 
 #include <windows.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #define xdefaultAlloc(size) (HeapAlloc(GetProcessHeap(), 0, size))
 #define xdefaultFree(p) (HeapFree(GetProcessHeap(), 0, p))
@@ -498,6 +495,50 @@ String StrAlloc(Arena *a, const char *s)
     };
 }
 
+void prints(String s)
+{
+    if (s.err)
+        printf("STRING_ERROR\n");
+    printf("%.*s\n", s.length, s.str);
+}
+
+String StrSub(String s, u32 start, u32 end)
+{
+    return (String){
+        .str = s.str + start,
+        .length = end - start,
+        .err = s.err,
+    };
+}
+
+u32 _strFindWordEx(String s, char *word, int wordlen)
+{
+    for (int i = 0; i < s.length; i++)
+    {
+        if (s.str[i] == word[0])
+        {
+            bool found = true;
+            for (int j = 0; j < wordlen && i + j < s.length; j++)
+                if (s.str[i + j] != word[j])
+                    found = false;
+
+            if (found)
+                return i;
+        }
+    }
+    return -1;
+}
+
+u32 StrFindWord(String s, char *word)
+{
+    return _strFindWordEx(s, word, strlen(word));
+}
+
+u32 StrFindString(String s, String word)
+{
+    return _strFindWordEx(s, word.str, word.length);
+}
+
 String StrCopy(Arena *a, String s)
 {
     if (a == NULL)
@@ -512,7 +553,7 @@ String StrCopy(Arena *a, String s)
     return (String){.err = ERR_NO_ERROR, .length = s.length, .str = str};
 }
 
-char CharAt(String s, int pos)
+char CharAt(String s, u32 pos)
 {
     if (!Ok(s))
         panic("CharAt on string with error\n");
@@ -522,7 +563,7 @@ char CharAt(String s, int pos)
     return *(s.str + pos);
 }
 
-int StrCount(String s, char c)
+u32 StrCount(String s, char c)
 {
     if (!Ok(s))
         return 0;
@@ -585,6 +626,19 @@ StringIter StrToIterator(String s)
     };
 }
 
+StringIter StrToIteratorEx(char *string, u32 length)
+{
+    return (StringIter){
+        .err = 0,
+        .pos = 0,
+        .s = (String){
+            .err = 0,
+            .str = string,
+            .length = length,
+        },
+    };
+}
+
 String StrSplit(StringIter *iter, char delim)
 {
     if (iter == NULL)
@@ -620,7 +674,7 @@ String StrSplit(StringIter *iter, char delim)
     };
 }
 
-int StrFind(String s, char c)
+u32 StrFind(String s, char c)
 {
     if (!Ok(s))
         return -1;
